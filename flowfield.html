@@ -1,0 +1,97 @@
+<title>Flow Field</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-width canvas stage with a slim control strip beneath. */
+:root{
+  --bg:#eef1f4; --fg:#14212b; --muted:#5b6b78; --panel:#ffffff; --line:#d3dae0;
+  --accent:#0b7a75; --trail:238,241,244; --ink-a:11,122,117; --ink-b:214,92,48;
+  --display:'Fraunces',Georgia,serif; --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1419; --fg:#e3ecf1; --muted:#8aa0ad; --panel:#142029; --line:#25343f;
+  --accent:#4fd1c5; --trail:12,20,25; --ink-a:79,209,197; --ink-b:255,159,102; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1419; --fg:#e3ecf1; --muted:#8aa0ad; --panel:#142029; --line:#25343f;
+  --accent:#4fd1c5; --trail:12,20,25; --ink-a:79,209,197; --ink-b:255,159,102; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--mono);
+  padding-block:20px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--display);font-size:clamp(26px,5vw,38px);margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+.note{color:var(--muted);font-size:12px;margin:0}
+.stage{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--bg);line-height:0}
+canvas{width:100%;height:min(62vh,520px);display:block;touch-action:none;cursor:crosshair}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px 20px;background:var(--panel);
+  border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+label{display:flex;flex-direction:column;gap:6px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);min-width:0}
+label b{color:var(--fg);font-weight:500;float:right}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+button{font:inherit;font-size:12px;background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Flow Field</h1>
+    <p class="note">Thousands of particles riding a noise-driven vector field. Drag across the canvas to stir it.</p>
+  </header>
+  <div class="stage"><canvas id="c" aria-label="Animated particle flow field"></canvas></div>
+  <div class="controls">
+    <label>Particles <b id="vN">2400</b><input id="n" type="range" min="200" max="6000" step="100" value="2400"></label>
+    <label>Turbulence <b id="vS">1.6</b><input id="s" type="range" min="0.4" max="4" step="0.1" value="1.6"></label>
+    <label>Speed <b id="vV">1.4</b><input id="v" type="range" min="0.3" max="4" step="0.1" value="1.4"></label>
+    <label>Trail length <b id="vT">0.06</b><input id="t" type="range" min="0.02" max="0.3" step="0.01" value="0.06"></label>
+    <div class="row"><button id="re">Reseed field</button><button id="pa">Pause</button></div>
+  </div>
+</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+let W,H,dpr,P=[],seed=Math.random()*1000,paused=false,t=0,mouse=null;
+// Simple smooth value noise
+const perm=new Uint8Array(512);function initPerm(){const a=[...Array(256).keys()];for(let i=255;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}for(let i=0;i<512;i++)perm[i]=a[i&255]}
+initPerm();
+const fade=x=>x*x*x*(x*(x*6-15)+10),lerp=(a,b,x)=>a+(b-a)*x;
+function grad(h,x,y){const u=(h&1)?x:-x,v=(h&2)?y:-y;return u+v}
+function noise(x,y){const X=Math.floor(x)&255,Y=Math.floor(y)&255;x-=Math.floor(x);y-=Math.floor(y);
+  const u=fade(x),v=fade(y),A=perm[X]+Y,B=perm[X+1]+Y;
+  return lerp(lerp(grad(perm[A],x,y),grad(perm[B],x-1,y),u),lerp(grad(perm[A+1],x,y-1),grad(perm[B+1],x-1,y-1),u),v)}
+function resize(){dpr=Math.min(devicePixelRatio||1,2);const r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);clearBg()}
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function clearBg(){ctx.fillStyle='rgb('+css('--trail')+')';ctx.fillRect(0,0,W,H)}
+function spawn(p){p.x=Math.random()*W;p.y=Math.random()*H;p.h=Math.random();return p}
+function setN(n){while(P.length<n)P.push(spawn({}));P.length=n}
+function frame(){
+  if(!paused){
+    const sc=+$('s').value,sp=+$('v').value,tr=+$('t').value;
+    ctx.fillStyle='rgba('+css('--trail')+','+tr+')';ctx.fillRect(0,0,W,H);
+    const a=css('--ink-a'),b=css('--ink-b');
+    t+=0.0025;
+    ctx.lineWidth=1;
+    for(const p of P){
+      const ang=noise(p.x*0.0028*sc+seed,p.y*0.0028*sc+t)*Math.PI*4;
+      let vx=Math.cos(ang)*sp,vy=Math.sin(ang)*sp;
+      if(mouse){const dx=p.x-mouse.x,dy=p.y-mouse.y,d2=dx*dx+dy*dy;if(d2<14000){const f=(1-d2/14000)*4/Math.sqrt(d2+1);vx+=-dy*f*0.5+dx*f*0.25;vy+=dx*f*0.5+dy*f*0.25}}
+      const nx=p.x+vx,ny=p.y+vy;
+      ctx.strokeStyle='rgba('+(p.h>0.82?b:a)+',0.55)';
+      ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(nx,ny);ctx.stroke();
+      p.x=nx;p.y=ny;
+      if(p.x<0||p.x>W||p.y<0||p.y>H||Math.random()<0.002)spawn(p);
+    }
+  }
+  requestAnimationFrame(frame)
+}
+cv.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();mouse={x:e.clientX-r.left,y:e.clientY-r.top}});
+cv.addEventListener('pointerleave',()=>mouse=null);
+[['n','vN'],['s','vS'],['v','vV'],['t','vT']].forEach(([i,o])=>$(i).addEventListener('input',()=>{$(o).textContent=$(i).value;if(i==='n')setN(+$(i).value)}));
+$('re').onclick=()=>{initPerm();seed=Math.random()*1000;clearBg()};
+$('pa').onclick=e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause'};
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>setTimeout(clearBg,50));
+new MutationObserver(()=>setTimeout(clearBg,50)).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+addEventListener('resize',resize);
+resize();setN(2400);
+if(matchMedia('(prefers-reduced-motion:reduce)').matches){paused=false;$('v').value=0.6;$('vV').textContent='0.6'}
+frame();
+</script>
